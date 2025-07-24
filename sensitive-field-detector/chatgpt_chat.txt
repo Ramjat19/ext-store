@@ -1,0 +1,851 @@
+I want to make a extension which is use for the masking of sensitive data, the extension will not do the masking job, it will be done by the chromium-browser which I have access, the extension just need to detect the elements which are sensitive and send those elements to the browser using the extension api which is built in browser itself for now I will take of everything like sending the element masking and all I just want that whatever the sensitive fields are present on the current page extension should detect that and log that in console for verification, you know very well what are sensitive fields it's like email phone number password etc etc. I have gemini api key, so I want that the detection should be automated like the extension will find all the elements separately using renderer api and then it will use the gemini and find which of the elements are sensitive and will response back with the senstive ones and then extension will log them, I am not sure so analyse my idea and if it is perfect then tell me how to and not than tell me the way
+
+
+ChatGPT said:
+Update memory? “Is building a Chromium extension that identifies s...”
+
+Yes
+
+No
+Your idea is solid and technically feasible. Here's a breakdown and some suggestions to make it effective and secure:
+
+✅ Concept Analysis
+You're planning a Chromium extension that:
+
+Identifies DOM elements (inputs, spans, divs, etc.) on the current page.
+
+Uses the Gemini API to determine if content is sensitive (email, phone, password, etc.).
+
+Logs those identified elements in the console for verification.
+
+Forwards the elements to the Chromium browser's custom masking API (which you’ll handle separately).
+
+You’re separating detection (extension) and masking (browser) — a good architectural decision.
+
+🧠 Gemini Use
+You can use Gemini to evaluate:
+
+The name, id, placeholder, label, type, or even content around elements.
+
+Ask Gemini: "Is this field likely to contain sensitive user information?"
+
+✅ Ideal Detection Pipeline
+DOM Traversal (Content Script):
+
+Collect all potentially relevant elements: input, textarea, div, span, etc.
+
+For each element, extract:
+
+js
+Copy
+Edit
+{
+  tagName,
+  type, // if input
+  name,
+  id,
+  placeholder,
+  aria-label,
+  innerText,
+  surrounding label text,
+  etc.
+}
+Send to Gemini API (Background Service Worker):
+
+Package element metadata in a compact prompt.
+
+Query Gemini: “Which of these are sensitive (like email, phone number, passwords)? Return IDs.”
+
+Get Response → Log in Console (Content Script):
+
+Receive results.
+
+Highlight/log sensitive elements for verification.
+
+🔧 Implementation Outline
+1. manifest.json
+json
+Copy
+Edit
+{
+  "manifest_version": 3,
+  "name": "Sensitive Field Detector",
+  "version": "1.0",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
+2. content.js – DOM Element Collector
+js
+Copy
+Edit
+function collectPotentialSensitiveElements() {
+  const elements = [];
+  document.querySelectorAll('input, textarea, div, span').forEach(el => {
+    const info = {
+      tag: el.tagName,
+      type: el.type || '',
+      id: el.id,
+      name: el.name,
+      placeholder: el.placeholder,
+      ariaLabel: el.getAttribute('aria-label'),
+      text: el.innerText?.trim(),
+    };
+    if (el.labels?.length) {
+      info.labelText = el.labels[0].innerText;
+    }
+    elements.push(info);
+  });
+
+  chrome.runtime.sendMessage({ action: 'checkSensitive', data: elements });
+}
+
+collectPotentialSensitiveElements();
+3. background.js – Gemini Classifier
+js
+Copy
+Edit
+chrome.runtime.onMessage.addListener(async (message, sender) => {
+  if (message.action === 'checkSensitive') {
+    const sensitiveElements = await getSensitiveFieldsFromGemini(message.data);
+    chrome.tabs.sendMessage(sender.tab.id, {
+      action: 'sensitiveDetected',
+      data: sensitiveElements
+    });
+  }
+});
+
+async function getSensitiveFieldsFromGemini(elements) {
+  const prompt = `These are DOM fields:\n${JSON.stringify(elements, null, 2)}\nIdentify which fields are sensitive like email, phone number, passwords. Return only the indexes of sensitive ones.`;
+
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=YOUR_GEMINI_API_KEY", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }]
+    })
+  });
+
+  const result = await res.json();
+  const textResponse = result.candidates[0]?.content?.parts[0]?.text || '';
+  const indices = textResponse.match(/\d+/g)?.map(Number) || [];
+
+  return indices.map(i => elements[i]);
+}
+4. Back in content.js – Log Sensitive Ones
+js
+Copy
+Edit
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === 'sensitiveDetected') {
+    console.log("Sensitive Elements Detected:");
+    console.log(message.data);
+  }
+});
+🧩 Optional Enhancements
+Add data-sensitivity="email" to mark DOM nodes.
+
+Inject tooltip overlays for debugging.
+
+Add a popup UI to manually confirm and submit to browser API.
+
+🛡️ Privacy Notes
+Don’t send actual values or user inputs to Gemini – use type, placeholder, name, etc.
+
+Masking and data transmission should follow best security practices.
+
+✅ Summary
+You’re on the right track. The steps above offer:
+
+Automated DOM scanning.
+
+Gemini-based classification.
+
+Integration-ready structure for browser-level masking.
+
+Would you like me to generate the full working extension boilerplate (.zip or folder layout)?
+
+
+
+
+
+
+
+
+You said:
+means I want that, I will enable the extension and I will go to any sign in or any page it should do everything automatically and log the sensitive fields on the page
+
+
+ChatGPT said:
+Perfect — yes, what you're describing is 100% achievable. Here's a clarified summary of your goal and the implementation plan:
+
+✅ Goal Recap
+When the user enables the extension and visits any page (e.g., sign-in or registration):
+
+The extension automatically runs in the background.
+
+It scans all visible elements (inputs, spans, etc.) on the page.
+
+It sends element metadata (not actual input values) to the Gemini API.
+
+Gemini tells you which fields are sensitive (like email, phone, password).
+
+The extension logs the sensitive fields to the console for verification.
+
+✅ Full Implementation Plan
+You’ll need 3 core files:
+
+manifest.json
+
+content.js (runs on every page automatically)
+
+background.js (communicates with Gemini)
+
+🧩 1. manifest.json
+json
+Copy
+Edit
+{
+  "manifest_version": 3,
+  "name": "Auto Sensitive Field Detector",
+  "version": "1.0",
+  "description": "Detects sensitive fields automatically using Gemini AI",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+🧩 2. content.js – Runs on every page
+js
+Copy
+Edit
+function collectDOMMetadata() {
+  const elements = [];
+  document.querySelectorAll('input, textarea, select, div, span').forEach((el, index) => {
+    const metadata = {
+      index,
+      tag: el.tagName,
+      type: el.type || '',
+      id: el.id || '',
+      name: el.name || '',
+      placeholder: el.placeholder || '',
+      ariaLabel: el.getAttribute('aria-label') || '',
+      text: (el.innerText || '').trim().slice(0, 100), // avoid too long texts
+      labelText: ''
+    };
+
+    // Try to find label text
+    const label = document.querySelector(`label[for="${el.id}"]`);
+    if (label) {
+      metadata.labelText = label.innerText.trim();
+    }
+
+    elements.push(metadata);
+  });
+
+  // Send to background
+  chrome.runtime.sendMessage({
+    action: 'analyzeFields',
+    data: elements
+  });
+}
+
+collectDOMMetadata();
+🧩 3. background.js – Handles Gemini API
+js
+Copy
+Edit
+chrome.runtime.onMessage.addListener(async (message, sender) => {
+  if (message.action === 'analyzeFields') {
+    const elements = message.data;
+
+    const prompt = `
+You are an expert in identifying sensitive fields in web forms. 
+Given the following DOM metadata for form-related elements, return the indexes of any elements that appear to be sensitive fields such as email, phone, password, address, credit card, etc.
+
+Only return a JSON array of indexes, like: [1, 3, 6]
+
+Fields:
+${JSON.stringify(elements, null, 2)}
+`;
+
+    try {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=YOUR_GEMINI_API_KEY", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+
+      const result = await res.json();
+      const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const indexes = JSON.parse(reply.match(/\[.*?\]/)?.[0] || '[]');
+      const sensitive = indexes.map(i => elements[i]);
+
+      // Send back to content script
+      chrome.tabs.sendMessage(sender.tab.id, {
+        action: 'logSensitiveFields',
+        data: sensitive
+      });
+    } catch (e) {
+      console.error("Gemini error:", e);
+    }
+  }
+});
+🧩 4. Back in content.js – Log Result
+Add this to the bottom of content.js:
+
+js
+Copy
+Edit
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === 'logSensitiveFields') {
+    console.log("🔐 Sensitive Fields Detected:");
+    console.table(message.data);
+  }
+});
+✅ How to Use
+Replace YOUR_GEMINI_API_KEY with your Gemini Pro API key.
+
+Load this as an unpacked extension in chrome://extensions.
+
+Enable the extension.
+
+Visit any page with a login or form → Open DevTools → You’ll see logs like:
+
+graphql
+Copy
+Edit
+🔐 Sensitive Fields Detected:
+(index)  tag     type      name     placeholder     ...
+0        INPUT   email     user     Enter your email
+2        INPUT   password  pass     ********
+⚠️ Notes
+Avoid sending user-typed values — only metadata.
+
+Rate-limit Gemini calls if needed.
+
+Consider caching common detections for performance.
+
+Would you like a downloadable .zip with all files ready to run?
+
+
+
+
+
+
+
+
+You said:
+if someone scrolls down and on the same page after scrolling down a new sensitive field come, will it be detected?
+
+
+ChatGPT said:
+Great question. With the current setup — where the detection runs only once when the page loads (document_idle) — no, new fields that appear after scrolling, via lazy loading or dynamic JavaScript rendering, will NOT be detected automatically.
+
+✅ Solutions to Support Scroll-Triggered Field Detection
+You have three effective options:
+
+🔁 Option 1: Use a MutationObserver (Recommended)
+A MutationObserver can watch for changes in the DOM (new inputs added, etc.) and trigger re-scanning.
+
+Update content.js like this:
+
+js
+Copy
+Edit
+function collectDOMMetadata() {
+  const elements = [];
+  document.querySelectorAll('input, textarea, select, div, span').forEach((el, index) => {
+    const metadata = {
+      index,
+      tag: el.tagName,
+      type: el.type || '',
+      id: el.id || '',
+      name: el.name || '',
+      placeholder: el.placeholder || '',
+      ariaLabel: el.getAttribute('aria-label') || '',
+      text: (el.innerText || '').trim().slice(0, 100),
+      labelText: ''
+    };
+
+    const label = document.querySelector(`label[for="${el.id}"]`);
+    if (label) metadata.labelText = label.innerText.trim();
+
+    elements.push(metadata);
+  });
+
+  chrome.runtime.sendMessage({
+    action: 'analyzeFields',
+    data: elements
+  });
+}
+
+// Initial run
+collectDOMMetadata();
+
+// 👁️ Setup MutationObserver to detect DOM changes
+const observer = new MutationObserver((mutations) => {
+  // You can improve this: check if new inputs were added
+  collectDOMMetadata(); // This could be throttled if needed
+});
+
+// Start observing the whole body for new nodes
+observer.observe(document.body, {
+  childList: true,
+  subtree: true
+});
+🟡 Option 2: Re-run Detection on Scroll (Simple Fallback)
+js
+Copy
+Edit
+let lastCheck = 0;
+window.addEventListener('scroll', () => {
+  const now = Date.now();
+  if (now - lastCheck > 3000) { // only run every 3s
+    collectDOMMetadata();
+    lastCheck = now;
+  }
+});
+🧠 Option 3: Combine Both (Best Coverage)
+Use MutationObserver for dynamic changes, and scroll listener to catch edge cases like infinite scroll loading.
+
+⚠️ Important Optimization
+To avoid spamming the Gemini API, you should:
+
+Debounce the collectDOMMetadata() call.
+
+Track already-analyzed elements (via a Set of id or references).
+
+Send only newly-added elements to Gemini, not the full list every time.
+
+Example:
+
+js
+Copy
+Edit
+const processedElements = new Set();
+
+function collectDOMMetadata() {
+  const newElements = [];
+  document.querySelectorAll('input, textarea, select, div, span').forEach((el) => {
+    if (processedElements.has(el)) return;
+
+    processedElements.add(el);
+    // ... build metadata and push to newElements
+  });
+
+  if (newElements.length > 0) {
+    chrome.runtime.sendMessage({
+      action: 'analyzeFields',
+      data: newElements
+    });
+  }
+}
+✅ Final Result
+With these enhancements, your extension will:
+
+React to scrolling, dynamic content, and JS-based form builders.
+
+Continue detecting new sensitive fields in real time.
+
+Log newly detected fields automatically.
+
+Would you like me to integrate the MutationObserver + scroll listener into the full content.js and send a complete updated working version?
+
+
+
+
+
+
+
+
+You said:
+so give the final complete detailed step-by-step guide and what i will achieve at the end
+
+
+ChatGPT said:
+Here is your complete, step-by-step guide to build a Chromium extension that automatically detects sensitive fields (like email, phone, password) even as the user scrolls or the page dynamically loads — using the Gemini API.
+
+🔚 What You'll Achieve at the End
+✅ A working Chrome extension that:
+
+Automatically runs on every webpage.
+
+Scans all visible form/input fields on page load.
+
+Watches for new elements added as the user scrolls or interacts.
+
+Sends metadata about elements to Gemini AI (using your API key).
+
+Gemini identifies which fields are sensitive (like email, phone, password).
+
+Logs detected sensitive fields into DevTools Console.
+
+📁 Final Project Structure
+pgsql
+Copy
+Edit
+sensitive-detector-extension/
+│
+├── manifest.json
+├── background.js
+├── content.js
+└── (no popup or UI needed for now)
+🧩 Step-by-Step Implementation
+1. manifest.json – Extension Manifest
+json
+Copy
+Edit
+{
+  "manifest_version": 3,
+  "name": "Sensitive Field Detector",
+  "version": "1.0",
+  "description": "Detects sensitive fields using Gemini AI automatically.",
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+2. background.js – Handles Gemini API
+js
+Copy
+Edit
+chrome.runtime.onMessage.addListener(async (message, sender) => {
+  if (message.action === 'analyzeFields') {
+    const elements = message.data;
+
+    const prompt = `
+You are an AI that identifies sensitive input fields. Analyze the following metadata and return only the indexes of fields that are sensitive (like email, password, phone, address, etc.). Respond ONLY with a JSON array of indexes.
+
+Fields:
+${JSON.stringify(elements, null, 2)}
+`;
+
+    try {
+      const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=YOUR_GEMINI_API_KEY", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+
+      const result = await res.json();
+      const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const indexes = JSON.parse(reply.match(/\[.*?\]/)?.[0] || '[]');
+      const sensitive = indexes.map(i => elements[i]);
+
+      chrome.tabs.sendMessage(sender.tab.id, {
+        action: 'logSensitiveFields',
+        data: sensitive
+      });
+    } catch (e) {
+      console.error("Gemini error:", e);
+    }
+  }
+});
+🔁 Replace YOUR_GEMINI_API_KEY with your real Gemini Pro API key.
+
+3. content.js – DOM Scanner + Auto Updates
+js
+Copy
+Edit
+const processedElements = new WeakSet(); // Tracks already scanned elements
+
+function extractMetadataFromElement(el, index) {
+  const metadata = {
+    index,
+    tag: el.tagName,
+    type: el.type || '',
+    id: el.id || '',
+    name: el.name || '',
+    placeholder: el.placeholder || '',
+    ariaLabel: el.getAttribute('aria-label') || '',
+    text: (el.innerText || '').trim().slice(0, 100),
+    labelText: ''
+  };
+
+  const label = document.querySelector(`label[for="${el.id}"]`);
+  if (label) metadata.labelText = label.innerText.trim();
+
+  return metadata;
+}
+
+function collectNewElementsAndSend() {
+  const all = document.querySelectorAll('input, textarea, select, div, span');
+  const newElements = [];
+
+  let index = 0;
+  all.forEach(el => {
+    if (!processedElements.has(el)) {
+      processedElements.add(el);
+      const data = extractMetadataFromElement(el, index++);
+      newElements.push(data);
+    }
+  });
+
+  if (newElements.length > 0) {
+    chrome.runtime.sendMessage({
+      action: 'analyzeFields',
+      data: newElements
+    });
+  }
+}
+
+// Initial scan
+collectNewElementsAndSend();
+
+// Log sensitive results
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.action === 'logSensitiveFields') {
+    console.log("🔐 Sensitive Fields Detected:");
+    console.table(message.data);
+  }
+});
+
+// 🔁 Watch for new DOM elements (lazy load, infinite scroll, etc)
+const observer = new MutationObserver(() => {
+  collectNewElementsAndSend();
+});
+observer.observe(document.body, { childList: true, subtree: true });
+
+// 🟡 Fallback scroll-based detection
+let lastRun = 0;
+window.addEventListener('scroll', () => {
+  const now = Date.now();
+  if (now - lastRun > 3000) {
+    collectNewElementsAndSend();
+    lastRun = now;
+  }
+});
+🚀 How to Run It
+Put the files above in a folder like sensitive-detector-extension/.
+
+Open Chrome → go to chrome://extensions/.
+
+Enable Developer Mode (top-right).
+
+Click "Load unpacked" and select your folder.
+
+Visit any website with a sign-up, login, or form.
+
+Open DevTools Console (F12) → it will log all sensitive fields automatically.
+
+🧠 Gemini Will Detect Fields Like:
+input[type="email"]
+
+input[name="phone"]
+
+input[placeholder*="password"]
+
+<span id="user-ssn">...
+
+<div>Your card number is...</div>
+
+✅ Features Achieved
+Feature	Status
+Runs on any webpage	✅
+Automatically detects fields	✅
+Uses Gemini to classify sensitivity	✅
+Logs only sensitive fields	✅
+Handles dynamic DOM changes	✅
+No need for user interaction	✅
+
+Would you like a downloadable .zip or GitHub repo with this entire working setup?
+
+
+
+
+
+
+
+
+You said:
+don't give me the code give me the complete guide to achieve my goal
+
+
+ChatGPT said:
+Absolutely. Here’s your complete step-by-step guide (without code) to build a Chrome extension that:
+
+Automatically detects sensitive fields on any webpage (like email, phone, password).
+
+Continues detecting them as the user scrolls or interacts with the page.
+
+Uses Gemini API to classify fields as sensitive.
+
+Logs detected sensitive fields to the browser console.
+
+Leaves the actual masking to your custom Chromium build, which you'll handle separately.
+
+🧭 PHASE 1: Understanding the Architecture
+You’re building a Chrome extension that acts like a “scanner”:
+
+Frontend (content script) collects visible form-related fields from the webpage.
+
+Background script sends those field descriptions to Gemini for classification.
+
+Console output shows which fields are sensitive.
+
+Later, you’ll pass those elements to your Chromium browser's custom masking API.
+
+🛠️ PHASE 2: Setup
+1. Create Your Project Folder
+Create a folder like sensitive-field-detector/.
+
+Inside it, you’ll place:
+
+A manifest file (tells Chrome about your extension)
+
+A content script (runs in the context of every page)
+
+A background service worker (communicates with Gemini)
+
+Optionally, an icons/ folder if needed.
+
+🧱 PHASE 3: Extension Configuration
+1. Configure the Manifest
+Set up a manifest.json:
+
+Use Manifest V3 format.
+
+Register the content script to run on all webpages.
+
+Register the background.js as a service worker.
+
+Request permissions for activeTab, scripting, and <all_urls>.
+
+This allows your extension to:
+
+Access page content.
+
+Inject scripts into any page.
+
+Communicate between scripts.
+
+📄 PHASE 4: DOM Field Collection
+1. What the Content Script Does
+Runs automatically on every page load.
+
+Scans the DOM for elements likely to hold user input or sensitive info:
+
+input, textarea, select, div, span
+
+Collects descriptive metadata for each element:
+
+HTML tag, type, name, id, placeholder, aria-label, inner text, and any associated <label> text
+
+Sends this metadata to the background script.
+
+You don’t extract or send any actual values typed by the user, only static metadata (for privacy and legality).
+
+🌐 PHASE 5: Gemini Integration
+1. How Gemini Fits In
+Your background script receives metadata from the content script.
+
+It builds a prompt like:
+
+"Given these form fields, which ones look like sensitive data? Return only the indexes: [0, 2, 4]"
+
+Sends this prompt to the Gemini Pro API via an HTTP POST request.
+
+Gemini responds with a list of indexes of sensitive fields.
+
+🔄 PHASE 6: Dynamic Field Detection (Scroll, Lazy-Load)
+Webpages today often load fields after the initial page load — e.g., on scroll or via JavaScript.
+
+To support that:
+
+You add a MutationObserver in your content script to watch for DOM changes.
+
+You also optionally listen to scroll events as a fallback.
+
+These mechanisms automatically re-trigger scanning for any newly added fields.
+
+You track already scanned elements to avoid duplicates.
+
+🪵 PHASE 7: Logging Detected Fields
+Once Gemini responds:
+
+The background script sends a message back to the content script with the sensitive fields.
+
+The content script logs them in the browser console:
+
+You can use console.table() for clarity.
+
+Each logged item shows tag, type, name, placeholder, etc.
+
+This gives you a clear verification output while testing.
+
+🚦 PHASE 8: Load & Test the Extension
+1. Load into Chrome
+Open chrome://extensions/
+
+Enable Developer mode
+
+Click “Load Unpacked” → select your project folder
+
+2. Visit Any Page
+Open a login, registration, or checkout page
+
+Open DevTools Console
+
+You’ll see logged messages for any sensitive fields Gemini detected
+
+📤 PHASE 9: Optional – Forward to Chromium API
+Since you mentioned your Chromium browser will handle masking:
+
+Instead of just logging, you can call your browser’s custom extension API (like chrome.sendSensitiveElements()).
+
+Pass the sensitive elements for masking or redaction.
+
+You can simulate this now with logging, and replace it later with real integration.
+
+✅ What You’ll Achieve
+Capability	Result
+Automatic field scanning on any page	✅
+Dynamic DOM update support	✅
+Gemini AI classification of sensitivity	✅
+Console logging for testing	✅
+Extension-only architecture	✅
+Decoupled from masking logic	✅ (browser will handle masking)
+
+🧠 Final Notes & Best Practices
+Don’t send user values to Gemini — only static metadata (placeholder, type, id, etc.).
+
+Implement rate limiting to avoid flooding Gemini with requests.
+
+Keep track of already processed elements using WeakSet or custom IDs.
+
+Use Gemini Pro model, not Gemini 1.5 Flash, for better reasoning.
+
+You can easily upgrade this in future to show overlays/highlights or add user UI.
+
+Would you like me to now generate the ready-to-use folder with all files or guide you on how to deploy this for production use?

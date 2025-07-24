@@ -3,7 +3,7 @@ console.log('🔧 Background script starting...');
 console.log('🆔 Extension ID:', chrome.runtime.id);
 
 // Embedded AI configuration - Updated to latest Gemini API endpoint
-const GEMINI_API_KEY = 'AIzaSyCoNFODrVovsQEFa4nseHbv0d56eMqhtDU';
+const GEMINI_API_KEY = '';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
 
 // Track processed elements to avoid duplicates
